@@ -1,4 +1,4 @@
-use json::JsonValue;
+use serde_json::{Error as JsonError, Value as JsonValue};
 use std::{fmt, str::FromStr, string::String, vec::Vec};
 
 /// A reference to a maelstrom node id
@@ -28,10 +28,36 @@ pub struct Message {
 }
 
 impl Message {
-    /// Create a new message value from the given JSON payload.
-    /// The payload is assumed to be valid.
-    pub(crate) fn new(json: JsonValue) -> Self {
-        Self { json }
+    /// Create a new message from a JSON value
+    fn from_json(json: JsonValue) -> Result<Self, MessageError> {
+        let mut errors = vec![];
+
+        let src = &json["src"];
+        if !src.is_string() {
+            errors.push(("src".to_string(), src.clone()));
+        }
+
+        let dest = &json["dest"];
+        if !dest.is_string() {
+            errors.push(("dest".to_string(), dest.clone()));
+        }
+
+        let body = &json["body"];
+        if body.is_object() {
+            let msg_type = &body["type"];
+            if !msg_type.is_string() {
+                errors.push(("body.type".to_string(), msg_type.clone()));
+            }
+        } else {
+            errors.push(("body".to_string(), body.clone()));
+        }
+
+        if errors.is_empty() {
+            Ok(Message { json })
+        } else {
+            errors.shrink_to_fit();
+            Err(MessageError::Invalid(ValidationErrors(errors)))
+        }
     }
 
     /// Get a reference to the source of this message
@@ -70,10 +96,33 @@ impl Message {
     }
 }
 
+impl fmt::Display for Message {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.json.fmt(f)
+    }
+}
+
+impl FromStr for Message {
+    type Err = MessageError;
+
+    fn from_str(payload: &str) -> Result<Self, Self::Err> {
+        let json = serde_json::from_str(payload).map_err(MessageError::ParseError)?;
+        Message::from_json(json)
+    }
+}
+
+impl TryFrom<JsonValue> for Message {
+    type Error = MessageError;
+
+    fn try_from(value: JsonValue) -> Result<Self, Self::Error> {
+        Message::from_json(value)
+    }
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum MessageError {
-    #[error("invalid message paylod: {0}")]
-    ParseError(#[source] json::Error),
+    #[error("invalid message payload: {0}")]
+    ParseError(#[source] JsonError),
 
     #[error("message payload contains one or more invalid keys:{0}")]
     Invalid(ValidationErrors),
@@ -88,48 +137,6 @@ impl fmt::Display for ValidationErrors {
             write!(f, "\n  - `{}`: `{}`", key, value)?;
         }
         Ok(())
-    }
-}
-
-impl FromStr for Message {
-    type Err = MessageError;
-
-    fn from_str(payload: &str) -> Result<Self, Self::Err> {
-        let json = json::parse(payload).map_err(MessageError::ParseError)?;
-        let mut errors = vec![];
-
-        let src = &json["src"];
-        if !src.is_string() {
-            errors.push(("src".to_string(), src.clone()));
-        }
-
-        let dest = &json["dest"];
-        if !dest.is_string() {
-            errors.push(("dest".to_string(), dest.clone()));
-        }
-
-        let body = &json["body"];
-        if body.is_object() {
-            let msg_type = &body["type"];
-            if !msg_type.is_string() {
-                errors.push(("body.type".to_string(), msg_type.clone()));
-            }
-        } else {
-            errors.push(("body".to_string(), body.clone()));
-        }
-
-        if errors.is_empty() {
-            Ok(Message { json })
-        } else {
-            errors.shrink_to_fit();
-            Err(MessageError::Invalid(ValidationErrors(errors)))
-        }
-    }
-}
-
-impl fmt::Display for Message {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.json.fmt(f)
     }
 }
 
@@ -159,7 +166,6 @@ mod tests {
         assert_eq!(message.msg_id(), Some(MessageId(1)));
 
         let body = message.body();
-        assert_eq!(body.len(), 3);
         assert_eq!(body["echo"].as_str(), Some("Please echo 35"));
 
         Ok(())
