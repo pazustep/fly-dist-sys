@@ -1,14 +1,24 @@
-use crate::{Error, Message, MessageContext};
+use crate::Message;
+use async_trait::async_trait;
+use serde_json::Value;
 
-pub trait Handler<S> {
-    fn handle(&self, message: &Message, context: MessageContext<S>) -> Result<(), Error>;
+/// A factory for message handlers. A new handler is created to process each
+/// matching message.
+///
+/// Please note that the factory must produce boxed values; this is necessary to
+/// keep the factory trait itself safe for dynamic dispatch.
+pub trait HandlerFactory {
+    fn create(&self) -> Box<dyn Handler + Send>;
 }
 
-impl<F, S> Handler<S> for F
-where
-    F: Fn(&Message, MessageContext<S>) -> Result<(), Error>,
-{
-    fn handle(&self, message: &Message, context: MessageContext<S>) -> Result<(), Error> {
-        self(message, context)
-    }
+/// A maelstrom RPC message handler.
+#[async_trait]
+pub trait Handler {
+    /// Process a maelstrom message, returning a JSON value. The returned value
+    /// is used as the body of the response message.
+    ///
+    /// Please note that handlers are infallible — they should
+    /// handle errors internally, producing an [Error](crate::Error) value if
+    /// necessary.
+    async fn handle(&self, message: Message) -> Value;
 }

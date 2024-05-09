@@ -1,15 +1,22 @@
 use serde_json::Value;
-use std::{fmt, str::FromStr};
+use std::fmt;
 
-/// A maelstrom message
-#[derive(Debug)]
+/// A maelstrom message.
+///
+/// This is a thin wrapper over the raw JSON payload adding validation at
+/// construction time and convenient access to standard message fields described
+/// in the [maelstrom protocol][protocol].
+///
+/// [protocol]: https://github.com/jepsen-io/maelstrom/blob/main/doc/protocol.md
+#[derive(Clone, Debug)]
 pub struct Message {
     json: Value,
 }
 
 impl Message {
-    /// Create a new message from a JSON value
-    pub fn from_json(json: Value) -> Result<Self, MessageError> {
+    /// Construct a new `Message` value from the given JSON, validating that it
+    /// contains all properties required by the protocol.
+    pub fn from_json(json: Value) -> Result<Self, MessageValidationError> {
         let mut errors = vec![];
 
         let src = &json["src"];
@@ -36,11 +43,11 @@ impl Message {
             Ok(Self::from_valid_json(json))
         } else {
             errors.shrink_to_fit();
-            Err(MessageError::Invalid(ValidationErrors(errors)))
+            Err(MessageValidationError(errors))
         }
     }
 
-    pub(crate) fn from_valid_json(json: Value) -> Self {
+    fn from_valid_json(json: Value) -> Self {
         Self { json }
     }
 
@@ -81,26 +88,11 @@ impl fmt::Display for Message {
     }
 }
 
-impl FromStr for Message {
-    type Err = MessageError;
-
-    fn from_str(payload: &str) -> Result<Self, Self::Err> {
-        let json = serde_json::from_str(payload).map_err(MessageError::ParseError)?;
-        Message::from_json(json)
-    }
-}
-
 impl TryFrom<Value> for Message {
-    type Error = MessageError;
+    type Error = MessageValidationError;
 
     fn try_from(value: Value) -> Result<Self, Self::Error> {
         Message::from_json(value)
-    }
-}
-
-impl From<&Message> for Value {
-    fn from(value: &Message) -> Self {
-        value.json.clone()
     }
 }
 
@@ -110,46 +102,42 @@ impl From<Message> for Value {
     }
 }
 
+/// The error type for [Message::from_json].
+///
+/// Constructing a message from an arbitrary JSON value may fail because of
+/// missing or invalid keys. This error includes all errors found.
 #[derive(Debug, thiserror::Error)]
-pub enum MessageError {
-    #[error("invalid message payload: {0}")]
-    ParseError(#[source] serde_json::Error),
+pub struct MessageValidationError(Vec<(String, Value)>);
 
-    #[error("message payload contains one or more invalid keys:{0}")]
-    Invalid(ValidationErrors),
-}
-
-#[derive(Debug)]
-pub struct ValidationErrors(Vec<(String, Value)>);
-
-impl fmt::Display for ValidationErrors {
+impl fmt::Display for MessageValidationError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "invalid message payload")?;
+
         for (key, value) in self.0.iter() {
             write!(f, "\n  - `{}`: `{}`", key, value)?;
         }
+
         Ok(())
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use serde_json::json;
+
     use super::*;
 
     #[test]
-    fn parse() -> Result<(), MessageError> {
-        let message = Message::from_str(
-            r#"
-            {
-                "src": "c1",
-                "dest": "n1",
-                "body": {
-                    "type": "echo",
-                    "msg_id": 1,
-                    "echo": "Please echo 35"
-                }
-            }"#
-            .trim(),
-        )?;
+    fn parse() -> Result<(), MessageValidationError> {
+        let message = Message::from_json(json!({
+            "src": "c1",
+            "dest": "n1",
+            "body": {
+                "type": "echo",
+                "msg_id": 1,
+                "echo": "Please echo 35"
+            }
+        }))?;
 
         assert_eq!(message.src(), "c1");
         assert_eq!(message.dest(), "n1");

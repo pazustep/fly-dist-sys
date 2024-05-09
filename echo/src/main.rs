@@ -1,15 +1,31 @@
-use maelstrom::{Error, Message, MessageContext, Node};
+use async_trait::async_trait;
+use maelstrom::{Handler, HandlerFactory, Message, Node};
 use serde_json::Value;
+use tokio::task::JoinError;
 
-pub fn main() {
-    Node::std(())
-        .add_handler("echo", handle_echo)
+#[tokio::main]
+pub async fn main() -> Result<(), JoinError> {
+    Node::default()
+        .add_handler("echo", EchoFactory)
         .start()
-        .join()
+        .await
 }
 
-fn handle_echo(message: &Message, ctx: MessageContext<()>) -> Result<(), Error> {
-    let mut response = message.body().clone();
-    response["type"] = Value::from("echo_ok");
-    ctx.reply(response)
+struct EchoFactory;
+
+impl HandlerFactory for EchoFactory {
+    fn create(&self) -> Box<dyn Handler + Send> {
+        Box::new(Echo)
+    }
+}
+
+struct Echo;
+
+#[async_trait]
+impl Handler for Echo {
+    async fn handle(&self, message: Message) -> Value {
+        let mut response = message.body().clone();
+        response["type"] = Value::from("echo_ok");
+        response
+    }
 }
