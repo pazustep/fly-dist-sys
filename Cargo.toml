@@ -1,3 +1,9 @@
 [workspace]
-members = [ "maelstrom", "echo" ]
+members = ["maelstrom", "echo", "unique-ids"]
 resolver = "2"
+
+[workspace.dependencies]
+async-trait = "0.1.80"
+serde_json = "1.0.117"
+thiserror = "1.0.60"
+tokio = { version = "1.37.0", features = ["rt-multi-thread", "macros"] }
