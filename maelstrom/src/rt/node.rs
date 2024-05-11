@@ -14,35 +14,38 @@ use tokio::{
     task::{spawn_blocking, JoinError, JoinHandle, JoinSet},
 };
 
-type Factories = HashMap<String, Box<dyn HandlerFactory + Send>>;
+type Factories<S> = HashMap<String, Box<dyn HandlerFactory<S> + Send>>;
 
-pub struct Node<R, W> {
+pub struct Node<R, W, S> {
     input: R,
     output: W,
-    handlers: Factories,
+    state: S,
+    handlers: Factories<S>,
 }
 
-impl<R, W> Node<R, W> {
+impl<R, W, S> Node<R, W, S> {
     pub fn add_handler(
         mut self,
         msg_type: impl Into<String>,
-        handler: impl HandlerFactory + Send + 'static,
+        handler: impl HandlerFactory<S> + Send + 'static,
     ) -> Self {
         self.handlers.insert(msg_type.into(), Box::new(handler));
         self
     }
 }
 
-impl<R, W> Node<R, W>
+impl<R, W, S> Node<R, W, S>
 where
     R: Read + Send + 'static,
     W: Write + Send + 'static,
+    S: Clone + Send + 'static,
 {
-    pub fn new(input: R, output: W) -> Self {
+    pub fn new(input: R, output: W, state: S) -> Self {
         let handlers = HashMap::new();
         Self {
             input,
             output,
+            state,
             handlers,
         }
     }
@@ -51,14 +54,17 @@ where
         let message_rx = start_input_task(self.input);
         let (handle, write_tx) = start_write_task(self.output);
         let reply_tx = start_reply_task(write_tx);
-        start_handler_task(self.handlers, message_rx, reply_tx);
+        start_handler_task(self.state, self.handlers, message_rx, reply_tx);
         handle
     }
 }
 
-impl Default for Node<Stdin, Stdout> {
+impl<S> Default for Node<Stdin, Stdout, S>
+where
+    S: Default + Clone + Send + 'static,
+{
     fn default() -> Self {
-        Self::new(stdin(), stdout())
+        Self::new(stdin(), stdout(), S::default())
     }
 }
 
@@ -99,19 +105,25 @@ fn input_task(reader: impl Read, message_tx: AsyncSender<Message>) {
     }
 }
 
-fn start_handler_task(
-    handlers: Factories,
+fn start_handler_task<S>(
+    state: S,
+    handlers: Factories<S>,
     message_rx: AsyncReceiver<Message>,
     reply_tx: AsyncSender<Reply>,
-) {
-    spawn(async move { handler_task(handlers, message_rx, reply_tx).await });
+) where
+    S: Clone + Send + 'static,
+{
+    spawn(async move { handler_task(state, handlers, message_rx, reply_tx).await });
 }
 
-async fn handler_task(
-    handlers: Factories,
+async fn handler_task<S>(
+    state: S,
+    handlers: Factories<S>,
     mut message_rx: AsyncReceiver<Message>,
     reply_tx: AsyncSender<Reply>,
-) {
+) where
+    S: Clone + Send + 'static,
+{
     let mut tasks = JoinSet::new();
 
     while let Some(message) = message_rx.recv().await {
@@ -121,7 +133,8 @@ async fn handler_task(
                 Some(factory) => {
                     let handler = factory.create();
                     let reply_tx = reply_tx.clone();
-                    tasks.spawn(async move { handle(message, handler, reply_tx).await });
+                    let state = state.clone();
+                    tasks.spawn(async move { handle(message, state, handler, reply_tx).await });
                 }
                 None => handle_not_supported(message, &reply_tx),
             },
@@ -154,9 +167,14 @@ fn handle_not_supported(message: Message, rx: &AsyncSender<Reply>) {
     let _ = rx.send(reply);
 }
 
-async fn handle(message: Message, handler: Box<dyn Handler + Send>, rx: AsyncSender<Reply>) {
+async fn handle<S>(
+    message: Message,
+    state: S,
+    handler: Box<dyn Handler<S> + Send>,
+    rx: AsyncSender<Reply>,
+) {
     let (dest, in_reply_to) = (message.src().to_string(), message.msg_id());
-    let reply = handler.handle(message).await;
+    let reply = handler.handle(message, state).await;
     let reply = Reply::new(dest, in_reply_to, reply);
     let _ = rx.send(reply);
 }

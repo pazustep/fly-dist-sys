@@ -13,8 +13,8 @@ pub async fn main() -> Result<(), JoinError> {
 
 struct EchoFactory;
 
-impl HandlerFactory for EchoFactory {
-    fn create(&self) -> Box<dyn Handler + Send> {
+impl HandlerFactory<()> for EchoFactory {
+    fn create(&self) -> Box<dyn Handler<()> + Send> {
         Box::new(Echo)
     }
 }
@@ -22,8 +22,8 @@ impl HandlerFactory for EchoFactory {
 struct Echo;
 
 #[async_trait]
-impl Handler for Echo {
-    async fn handle(&self, message: Message) -> Value {
+impl Handler<()> for Echo {
+    async fn handle(&self, message: Message, _: ()) -> Value {
         let mut response = message.body().clone();
         response["type"] = Value::from("echo_ok");
         response

@@ -26,8 +26,8 @@ impl Generate {
 }
 
 #[async_trait]
-impl Handler for Generate {
-    async fn handle(&self, message: Message) -> Value {
+impl Handler<()> for Generate {
+    async fn handle(&self, message: Message, _: ()) -> Value {
         let counter = self.counter.fetch_add(1, Ordering::Relaxed);
         let node_id = message.dest();
         let unique_id = format!("{}-{}", node_id, counter);
@@ -43,8 +43,8 @@ struct GenerateFactory {
     counter: Arc<AtomicU64>,
 }
 
-impl HandlerFactory for GenerateFactory {
-    fn create(&self) -> Box<dyn Handler + Send> {
+impl HandlerFactory<()> for GenerateFactory {
+    fn create(&self) -> Box<dyn Handler<()> + Send> {
         Box::new(Generate::new(self.counter.clone()))
     }
 }
