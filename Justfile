@@ -12,3 +12,6 @@ echo: _build
 
 unique-ids: _build
     {{maelstrom}} test -w unique-ids --bin target/release/unique-ids --node-count 3 --time-limit 30 --rate 1000 --node-count 3 --availability total --nemesis partition
+
+broadcast: _build
+    {{maelstrom}} test -w broadcast --bin target/release/broadcast --node-count 1 --time-limit 20 --rate 1000
