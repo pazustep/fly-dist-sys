@@ -8,6 +8,7 @@ pub use node::*;
 
 use serde_json::Value;
 
+#[derive(Debug)]
 enum SendMessage {
     Send {
         dest: String,

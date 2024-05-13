@@ -1,24 +1,25 @@
-use crate::{Context, Message};
-use async_trait::async_trait;
-use serde_json::Value;
+use crate::Context;
+use std::future::Future;
 
-/// A factory for message handlers. A new handler is created to process each
-/// matching message.
-///
-/// Please note that the factory must produce boxed values; this is necessary to
-/// keep the factory trait itself safe for dynamic dispatch.
-pub trait HandlerFactory<S> {
-    fn create(&self) -> Box<dyn Handler<S> + Send>;
-}
+/// A maelstrom RPC message handler. Handlers work by processing a sequence of
+/// commands. The handler can send messages to other nodes (as a reply to the
+/// current command or not) using the provided [Context].
+pub trait Handler {
+    /// The associated command type. While not constrained here, the command is
+    /// expected to implement [`TryFrom<Value, Error = crate::Error>`](TryFrom).
+    type Command;
 
-/// A maelstrom RPC message handler.
-#[async_trait]
-pub trait Handler<S> {
-    /// Process a maelstrom message, returning a JSON value. The returned value
-    /// is used as the body of the response message.
-    ///
-    /// Please note that handlers are infallible — they should
-    /// handle errors internally, producing an [Error](crate::Error) value if
-    /// necessary.
-    async fn handle(&self, message: Message, state: S, ctx: Context) -> Option<Value>;
+    /// Processes a command. The runtime calls this for every received message,
+    /// sequentially. To maintain performance, this method should never block or
+    /// take too long to run. If your workload requires anything like that, you
+    /// can spawn a task and send a reply when the task is completed using the
+    /// provided [Context].
+    fn handle(&mut self, command: Self::Command, ctx: Context);
+
+    /// Stops the handler. The runtime calls this methods and waits for it to
+    /// finish before exiting. If your handler spawns async tasks, you can
+    /// `await` them here to make sure they complete before terminating.
+    fn stop(&self) -> impl Future<Output = ()> + Send {
+        async {}
+    }
 }

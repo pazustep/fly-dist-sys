@@ -1,31 +1,38 @@
-use async_trait::async_trait;
-use maelstrom::{Context, Handler, HandlerFactory, Message, Node};
+use maelstrom::{Error, Handler, Message, Node};
 use serde_json::Value;
 use tokio::task::JoinError;
 
 #[tokio::main]
 pub async fn main() -> Result<(), JoinError> {
-    Node::default()
-        .add_handler("echo", EchoFactory)
-        .start()
-        .await
+    Node::from_handler(EchoHandler).start().await
 }
 
-struct EchoFactory;
+struct Echo {
+    body: Value,
+}
 
-impl HandlerFactory<()> for EchoFactory {
-    fn create(&self) -> Box<dyn Handler<()> + Send> {
-        Box::new(Echo)
+impl TryFrom<Message> for Echo {
+    type Error = Error;
+
+    fn try_from(value: Message) -> Result<Self, Self::Error> {
+        match value.msg_type() {
+            "echo" => {
+                let body = value.body().clone();
+                Ok(Self { body })
+            }
+            msg_type => Err(Error::not_supported(msg_type)),
+        }
     }
 }
 
-struct Echo;
+struct EchoHandler;
 
-#[async_trait]
-impl Handler<()> for Echo {
-    async fn handle(&self, message: Message, _: (), _: Context) -> Option<Value> {
-        let mut response = message.body().clone();
-        response["type"] = Value::from("echo_ok");
-        Some(response)
+impl Handler for EchoHandler {
+    type Command = Echo;
+
+    fn handle(&mut self, command: Self::Command, ctx: maelstrom::Context) {
+        let mut reply = command.body;
+        reply["type"] = "echo_ok".into();
+        ctx.reply(reply);
     }
 }
