@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use maelstrom::{Handler, HandlerFactory, Message, Node};
+use maelstrom::{Context, Handler, HandlerFactory, Message, Node};
 use serde_json::Value;
 use tokio::task::JoinError;
 
@@ -23,9 +23,9 @@ struct Echo;
 
 #[async_trait]
 impl Handler<()> for Echo {
-    async fn handle(&self, message: Message, _: ()) -> Value {
+    async fn handle(&self, message: Message, _: (), _: Context) -> Option<Value> {
         let mut response = message.body().clone();
         response["type"] = Value::from("echo_ok");
-        response
+        Some(response)
     }
 }

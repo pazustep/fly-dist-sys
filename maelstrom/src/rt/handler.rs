@@ -1,4 +1,4 @@
-use crate::Message;
+use crate::{Context, Message};
 use async_trait::async_trait;
 use serde_json::Value;
 
@@ -20,5 +20,5 @@ pub trait Handler<S> {
     /// Please note that handlers are infallible — they should
     /// handle errors internally, producing an [Error](crate::Error) value if
     /// necessary.
-    async fn handle(&self, message: Message, state: S) -> Value;
+    async fn handle(&self, message: Message, state: S, ctx: Context) -> Option<Value>;
 }

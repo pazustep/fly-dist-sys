@@ -4,8 +4,21 @@ struct Topology;
 
 #[async_trait]
 impl Handler<State> for Topology {
-    async fn handle(&self, _: Message, _: State) -> Value {
-        json!({ "type": "topology_ok" })
+    async fn handle(&self, message: Message, state: State, _: Context) -> Option<Value> {
+        let me = message.dest();
+        let neighbors = message.body()["topology"][me].as_array();
+
+        if let Some(neighbors) = neighbors {
+            let neighbors = neighbors
+                .iter()
+                .filter_map(|v| v.as_str())
+                .collect::<Vec<_>>();
+
+            state.add_neighbors(&neighbors);
+            eprintln!("topology updated with neighbors {:?}", neighbors);
+        }
+
+        Some(json!({ "type": "topology_ok" }))
     }
 }
 

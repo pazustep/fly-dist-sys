@@ -4,9 +4,9 @@ struct Read;
 
 #[async_trait]
 impl Handler<State> for Read {
-    async fn handle(&self, _: Message, state: State) -> Value {
-        let seen = state.seen.lock().unwrap();
-        json!({ "type": "read_ok", "messages": seen.iter().cloned().collect::<Value>() })
+    async fn handle(&self, _: Message, state: State, _: Context) -> Option<Value> {
+        let messages = state.seen().into_iter().collect::<Value>();
+        Some(json!({ "type": "read_ok", "messages": messages }))
     }
 }
 

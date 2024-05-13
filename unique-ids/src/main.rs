@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use maelstrom::{Handler, HandlerFactory, Message, Node};
+use maelstrom::{Context, Handler, HandlerFactory, Message, Node};
 use serde_json::{json, Value};
 use std::sync::{
     atomic::{AtomicU64, Ordering},
@@ -27,14 +27,14 @@ impl Generate {
 
 #[async_trait]
 impl Handler<()> for Generate {
-    async fn handle(&self, message: Message, _: ()) -> Value {
+    async fn handle(&self, message: Message, _: (), _: Context) -> Option<Value> {
         let counter = self.counter.fetch_add(1, Ordering::Relaxed);
         let node_id = message.dest();
         let unique_id = format!("{}-{}", node_id, counter);
-        json!({
+        Some(json!({
             "type": "generate_ok",
             "id": Value::from(unique_id),
-        })
+        }))
     }
 }
 
